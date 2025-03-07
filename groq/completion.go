@@ -16,7 +16,7 @@ const (
 )
 
 type Client interface {
-	CreateChatCompletion(ChatCompletionRequest) (*ChatCompletionResponse, error)
+	CreateChatCompletion(ChatCompletionRequest) (*ChatCompletionResponse, error, int, []byte)
 	CreateChatCompletionStream(context.Context, ChatCompletionRequest) (<-chan *ChatCompletionStreamResponse, func(), error)
 	ListModels() (*ListModelsResponse, error)
 	RetrieveModel(ModelID) (*Model, error)
@@ -95,21 +95,21 @@ func NewClient(apiKey string, httpClient *http.Client) Client {
 }
 
 // CreateChatCompletion sends a request to create a chat completion.
-func (c *client) CreateChatCompletion(req ChatCompletionRequest) (*ChatCompletionResponse, error) {
+func (c *client) CreateChatCompletion(req ChatCompletionRequest) (*ChatCompletionResponse, error, int, []byte) {
 	if req.Stream {
-		return nil, fmt.Errorf("use CreateChatCompletionStream for streaming completions")
+		return nil, fmt.Errorf("use CreateChatCompletionStream for streaming completions"), 0, nil
 	}
 
 	url := fmt.Sprintf("%s/v1/chat/completions", c.baseURL)
 
 	jsonData, err := json.Marshal(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %v", err)
+		return nil, fmt.Errorf("failed to marshal request: %v", err), 0, nil
 	}
 
 	httpReq, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(jsonData))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %v", err)
+		return nil, fmt.Errorf("failed to create request: %v", err), 0, nil
 	}
 
 	httpReq.Header.Set("Content-Type", "application/json")
@@ -117,7 +117,7 @@ func (c *client) CreateChatCompletion(req ChatCompletionRequest) (*ChatCompletio
 
 	resp, err := c.client.Do(httpReq)
 	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %v", err)
+		return nil, fmt.Errorf("failed to send request: %v", err), 0, nil
 	}
 	defer func(Body io.ReadCloser) {
 		_ = Body.Close()
@@ -125,17 +125,17 @@ func (c *client) CreateChatCompletion(req ChatCompletionRequest) (*ChatCompletio
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to read response body")
+		return nil, errors.Wrap(err, "failed to read response body"), 0, nil
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("invalid status code: %d, body: %s", resp.StatusCode, body)
+		return nil, fmt.Errorf("invalid status code: %d, body: %s", resp.StatusCode, body), resp.StatusCode, body
 	}
 
 	var chatResp ChatCompletionResponse
 	if err := json.Unmarshal(body, &chatResp); err != nil {
-		return nil, errors.Wrap(err, "failed to unmarshal response")
+		return nil, errors.Wrap(err, "failed to unmarshal response"), resp.StatusCode, body
 	}
 
-	return &chatResp, nil
+	return &chatResp, nil, 200, body
 }
