@@ -1,4 +1,4 @@
-module github.com/chotu-news/groq-go
+module github.com/magicx-ai/groq-go
 
 go 1.22.3
 
