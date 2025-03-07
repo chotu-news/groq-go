@@ -5,7 +5,7 @@ This is an unofficial library and is not affiliated with Groq.
 
 ## Installation
 ```bash
-go get -u github.com/magicx-ai/groq-go/groq
+go get -u github.com/chotu-news/groq-go/groq
 ```
 
 ## Usage
