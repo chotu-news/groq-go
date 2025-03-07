@@ -7,6 +7,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"regexp"
+	"strconv"
+	"time"
 
 	"github.com/pkg/errors"
 )
@@ -84,6 +88,13 @@ type Usage struct {
 	CompletionTime   float64 `json:"completion_time"`   // Time taken for the completion
 	TotalTime        float64 `json:"total_time"`        // Total time taken
 }
+type ErrorResponse struct {
+	Error struct {
+		Message string `json:"message"`
+		Type    string `json:"type"`
+		Code    string `json:"code"`
+	} `json:"error"`
+}
 
 func NewClient(apiKey string, httpClient *http.Client) Client {
 	return &client{
@@ -129,7 +140,30 @@ func (c *client) CreateChatCompletion(req ChatCompletionRequest) (*ChatCompletio
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("invalid status code: %d, body: %s", resp.StatusCode, body)
+		if resp.StatusCode == http.StatusTooManyRequests {
+			var errResp ErrorResponse
+			err = json.Unmarshal([]byte(body), &errResp)
+			if err != nil {
+				return nil, fmt.Errorf("invalid status code: %d, body: %s, Failed to unmarshall the error body", resp.StatusCode, body)
+			}
+			retryMs, err := extractRetryTime(errResp.Error.Message)
+
+			if os.Getenv("WAIT_TILL_MODEL_TIMEOUT") == "true" {
+				fmt.Println("Retry after (ms):", retryMs)
+				time.Sleep(time.Duration(retryMs) * time.Millisecond)
+				fmt.Println("Retrying now...")
+			} else {
+				fmt.Println("skipping waiting as its disabled now...")
+			}
+
+			if err != nil {
+				return nil, fmt.Errorf("invalid status code: %d, body: %s, Failed to parse retry time", resp.StatusCode, body)
+			}
+
+		} else {
+			return nil, fmt.Errorf("invalid status code: %d, body: %s", resp.StatusCode, body)
+		}
+
 	}
 
 	var chatResp ChatCompletionResponse
@@ -138,4 +172,34 @@ func (c *client) CreateChatCompletion(req ChatCompletionRequest) (*ChatCompletio
 	}
 
 	return &chatResp, nil
+}
+
+func extractRetryTime(message string) (int, error) {
+	re := regexp.MustCompile(`Please try again in (\d+)([a-zA-Z]+)\.`)
+	matches := re.FindStringSubmatch(message)
+	if len(matches) < 3 {
+		return 0, fmt.Errorf("retry time not found")
+	}
+
+	retryValue, err := strconv.Atoi(matches[1])
+	if err != nil {
+		return 0, err
+	}
+
+	unit := matches[2]
+	var retryMs int
+	switch unit {
+	case "ms":
+		retryMs = retryValue
+	case "s":
+		retryMs = retryValue * 1000
+	case "m":
+		retryMs = retryValue * 60 * 1000
+	case "h":
+		retryMs = retryValue * 60 * 60 * 1000
+	default:
+		return 0, fmt.Errorf("unknown time unit: %s", unit)
+	}
+
+	return retryMs, nil
 }
