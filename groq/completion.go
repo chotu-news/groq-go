@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"regexp"
 	"strconv"
 	"time"
@@ -31,8 +30,10 @@ var _ Client = (*client)(nil)
 type client struct {
 	apiKey string
 	// baseURL shouldn't end with a trailing slash
-	baseURL string
-	client  *http.Client
+	baseURL                     string
+	client                      *http.Client
+	max_wait_on_ratelimit_in_ms int
+	wait_on_ratelimit           bool
 }
 
 // ChatCompletionRequest represents the request body for creating a chat completion.
@@ -148,8 +149,11 @@ func (c *client) CreateChatCompletion(req ChatCompletionRequest) (*ChatCompletio
 			}
 			retryMs, err := extractRetryTime(errResp.Error.Message)
 
-			if os.Getenv("WAIT_TILL_MODEL_TIMEOUT") == "true" {
+			if c.wait_on_ratelimit {
 				fmt.Println("Retry after (ms):", retryMs)
+				if c.max_wait_on_ratelimit_in_ms < retryMs {
+					retryMs = c.max_wait_on_ratelimit_in_ms
+				}
 				time.Sleep(time.Duration(retryMs) * time.Millisecond)
 				fmt.Println("Retrying now...")
 			} else {
