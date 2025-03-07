@@ -97,12 +97,14 @@ type ErrorResponse struct {
 	} `json:"error"`
 }
 
-func NewClient(apiKey string, httpClient *http.Client) Client {
+func NewClient(apiKey string, httpClient *http.Client, wait_on_ratelimit bool, max_wait_on_ratelimit_in_ms int) Client {
 	return &client{
 		apiKey: apiKey,
 		client: httpClient,
 		// NOTE(@Kcrong): Need to handle if the user wants to use a different base URL
-		baseURL: baseURL,
+		baseURL:                     baseURL,
+		max_wait_on_ratelimit_in_ms: max_wait_on_ratelimit_in_ms,
+		wait_on_ratelimit:           wait_on_ratelimit,
 	}
 }
 
