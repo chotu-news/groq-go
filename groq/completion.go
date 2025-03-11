@@ -147,9 +147,10 @@ func (c *client) CreateChatCompletion(req ChatCompletionRequest) (*ChatCompletio
 			var errResp ErrorResponse
 			err = json.Unmarshal([]byte(body), &errResp)
 			if err != nil {
-				return nil, fmt.Errorf("invalid status code: %d, body: %s, Failed to unmarshall the error body", resp.StatusCode, body)
+				return nil, fmt.Errorf("invalid status code: %d, body: %s, Failed to unmarshall the error body, headers: %v", resp.StatusCode, body, resp)
 			}
-			retryMs, err := extractRetryTime(errResp.Error.Message)
+			retrys, err := strconv.Atoi(resp.Header.Get("retry-after"))
+			retryMs := retrys * 1000
 
 			if c.wait_on_ratelimit {
 				fmt.Println("Retry after (ms):", retryMs)
@@ -179,7 +180,9 @@ func (c *client) CreateChatCompletion(req ChatCompletionRequest) (*ChatCompletio
 
 	return &chatResp, nil
 }
-
+func ExtractRetryTime(s string) (int, error) {
+	return extractRetryTime(s)
+}
 func extractRetryTime(message string) (int, error) {
 	re := regexp.MustCompile(`Please try again in (\d+)([a-zA-Z]+)\.`)
 	matches := re.FindStringSubmatch(message)
