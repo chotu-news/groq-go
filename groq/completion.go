@@ -107,6 +107,21 @@ func NewClient(apiKey string, httpClient *http.Client, wait_on_ratelimit bool, m
 		wait_on_ratelimit:           wait_on_ratelimit,
 	}
 }
+func (c *client) makeReq(httpReq *http.Request) (*http.Response, []byte, error) {
+	resp, err := c.client.Do(httpReq)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to send request: %v", err)
+	}
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, nil, errors.Wrap(err, "failed to read response body")
+	}
+	return resp, body, err
+}
 
 // CreateChatCompletion sends a request to create a chat completion.
 func (c *client) CreateChatCompletion(req ChatCompletionRequest) (*ChatCompletionResponse, error) {
@@ -129,21 +144,28 @@ func (c *client) CreateChatCompletion(req ChatCompletionRequest) (*ChatCompletio
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.apiKey))
 
-	resp, err := c.client.Do(httpReq)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %v", err)
-	}
-	defer func(Body io.ReadCloser) {
-		_ = Body.Close()
-	}(resp.Body)
+	resp, body, err := c.makeReq(httpReq)
+	//  c.client.Do(httpReq)
+	// if err != nil {
+	// 	return nil, fmt.Errorf("failed to send request: %v", err)
+	// }
+	// defer func(Body io.ReadCloser) {
+	// 	_ = Body.Close()
+	// }(resp.Body)
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to read response body")
-	}
+	// body, err := io.ReadAll(resp.Body)
+	// if err != nil {
+	// 	return nil, errors.Wrap(err, "failed to read response body")
+	// }
 
 	if resp.StatusCode != http.StatusOK {
-		if resp.StatusCode == http.StatusTooManyRequests {
+		retry := 0
+		maxRetry := 5
+		for resp.StatusCode == http.StatusTooManyRequests && retry < maxRetry {
+			retry++
+			if retry == maxRetry {
+				return nil, fmt.Errorf("invalid status code: %d, body: %s", resp.StatusCode, body)
+			}
 			var errResp ErrorResponse
 			err = json.Unmarshal([]byte(body), &errResp)
 			if err != nil {
@@ -159,6 +181,8 @@ func (c *client) CreateChatCompletion(req ChatCompletionRequest) (*ChatCompletio
 				}
 				time.Sleep(time.Duration(retryMs) * time.Millisecond)
 				fmt.Println("Retrying now...")
+				resp, body, err = c.makeReq(httpReq)
+
 			} else {
 				fmt.Println("skipping waiting as its disabled now...")
 			}
@@ -167,8 +191,6 @@ func (c *client) CreateChatCompletion(req ChatCompletionRequest) (*ChatCompletio
 				return nil, fmt.Errorf("invalid status code: %d, body: %s, Failed to parse retry time", resp.StatusCode, body)
 			}
 
-		} else {
-			return nil, fmt.Errorf("invalid status code: %d, body: %s", resp.StatusCode, body)
 		}
 
 	}
