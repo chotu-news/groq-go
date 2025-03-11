@@ -107,7 +107,25 @@ func NewClient(apiKey string, httpClient *http.Client, wait_on_ratelimit bool, m
 		wait_on_ratelimit:           wait_on_ratelimit,
 	}
 }
-func (c *client) makeReq(httpReq *http.Request) (*http.Response, []byte, error) {
+func (c *client) makeReq(req ChatCompletionRequest) (*http.Response, []byte, error) {
+	if req.Stream {
+		return nil, nil, fmt.Errorf("use CreateChatCompletionStream for streaming completions")
+	}
+
+	url := fmt.Sprintf("%s/v1/chat/completions", c.baseURL)
+
+	jsonData, err := json.Marshal(req)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to marshal request: %v", err)
+	}
+
+	httpReq, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create request: %v", err)
+	}
+
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.apiKey))
 	resp, err := c.client.Do(httpReq)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to send request: %v", err)
@@ -125,38 +143,7 @@ func (c *client) makeReq(httpReq *http.Request) (*http.Response, []byte, error) 
 
 // CreateChatCompletion sends a request to create a chat completion.
 func (c *client) CreateChatCompletion(req ChatCompletionRequest) (*ChatCompletionResponse, error) {
-	if req.Stream {
-		return nil, fmt.Errorf("use CreateChatCompletionStream for streaming completions")
-	}
-
-	url := fmt.Sprintf("%s/v1/chat/completions", c.baseURL)
-
-	jsonData, err := json.Marshal(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %v", err)
-	}
-
-	httpReq, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %v", err)
-	}
-
-	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Authorization", fmt.Sprintf("Bearer %s", c.apiKey))
-
-	resp, body, err := c.makeReq(httpReq)
-	//  c.client.Do(httpReq)
-	// if err != nil {
-	// 	return nil, fmt.Errorf("failed to send request: %v", err)
-	// }
-	// defer func(Body io.ReadCloser) {
-	// 	_ = Body.Close()
-	// }(resp.Body)
-
-	// body, err := io.ReadAll(resp.Body)
-	// if err != nil {
-	// 	return nil, errors.Wrap(err, "failed to read response body")
-	// }
+	resp, body, err := c.makeReq(req)
 
 	if resp.StatusCode != http.StatusOK {
 		retry := 0
@@ -181,7 +168,7 @@ func (c *client) CreateChatCompletion(req ChatCompletionRequest) (*ChatCompletio
 				}
 				time.Sleep(time.Duration(retryMs) * time.Millisecond)
 				fmt.Println("Retrying now...")
-				resp, body, err = c.makeReq(httpReq)
+				resp, body, err = c.makeReq(req)
 
 			} else {
 				fmt.Println("skipping waiting as its disabled now...")
