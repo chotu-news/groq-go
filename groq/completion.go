@@ -148,10 +148,10 @@ func (c *client) CreateChatCompletion(req ChatCompletionRequest) (*ChatCompletio
 	if resp.StatusCode != http.StatusOK {
 		retry := 0
 		maxRetry := 5
-		for resp.StatusCode == http.StatusTooManyRequests && retry < maxRetry {
-			retry++
-			if retry == maxRetry {
-				return nil, fmt.Errorf("invalid status code: %d, body: %s", resp.StatusCode, body)
+		for resp.StatusCode == http.StatusTooManyRequests && retry <= maxRetry {
+			retry = retry + 1
+			if retry > maxRetry {
+				return nil, fmt.Errorf("retry is %d max retry :%d, code: %d, body: %s,response : %v", retry, maxRetry, resp.StatusCode, body, resp)
 			}
 			var errResp ErrorResponse
 			err = json.Unmarshal([]byte(body), &errResp)
